@@ -77,11 +77,14 @@ def test_guided_demo_is_cached_and_does_not_replace_working_run(client, tmp_path
         assert client.get(f'/api/runs/{original_id}/exports/{name}').content == content
 
 
-def test_optional_authentication(client, monkeypatch):
+def test_public_access_ignores_legacy_password(client, monkeypatch):
     monkeypatch.setenv('GRAPH_ACCESS_PASSWORD', 'test-only-password')
-    assert client.get('/api/initial').status_code == 401
-    assert client.get('/api/initial', auth=('analyst', 'wrong')).status_code == 401
-    assert client.get('/api/initial', auth=('analyst', 'test-only-password')).status_code == 200
+    for path in ('/', '/api/health', '/api/initial', '/static/guide.html'):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'www-authenticate' not in response.headers
+        assert response.headers['x-content-type-options'] == 'nosniff'
+    assert client.get('/api/initial', auth=('analyst', 'old-password')).status_code == 200
 
 
 def test_investigation_routes_and_report_download(client):

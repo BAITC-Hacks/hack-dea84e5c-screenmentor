@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import base64
 import os
-import secrets
 import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -55,12 +53,7 @@ app = FastAPI(title='Граф денег', version=METHOD_VERSION, lifespan=life
 
 
 @app.middleware('http')
-async def optional_access_control(request: Request, call_next):
-    password = os.environ.get('GRAPH_ACCESS_PASSWORD')
-    if password:
-        expected = 'Basic ' + base64.b64encode(('analyst:' + password).encode()).decode()
-        if not secrets.compare_digest(request.headers.get('authorization', ''), expected):
-            return Response(status_code=401, headers={'WWW-Authenticate': 'Basic realm="Graph analyst"'})
+async def response_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'same-origin'

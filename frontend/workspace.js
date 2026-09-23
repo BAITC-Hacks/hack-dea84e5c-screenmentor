@@ -32,7 +32,7 @@ function beginWorkspace(data){
   if(!data.summary.synthetic){const url=new URL(location.href);url.searchParams.delete('demo');url.searchParams.delete('tour');history.replaceState(null,'',url);}
   for(const id of ['notes-dialog','saved-dialog','compare-dialog'])$(id).close();
   const key='moneygraph:workspace:v1:'+['nodes','edges','transactions'].map(name=>data.summary.hashes[name]).join(':');
-  work={key,notes:cleanedNotes(storageRead(key+':notes',{})),history:[],index:-1,compare:[]};
+  work={key,notes:cleanedNotes(storageRead(key+':notes',{})),history:[],index:-1,compare:[],labels:Object.create(null)};
   $('workspace-status').hidden=true;
   try{if(!new URLSearchParams(location.search).has('demo'))sessionStorage.setItem('moneygraph:active-run',data.run_id);}catch{}
   refreshWorkTools();
@@ -41,9 +41,10 @@ function restoreWorkspaceView(){
   const saved=storageRead(work.key+':view',{});
   if(!saved||typeof saved!=='object')return null;
   $('search').value=typeof saved.query==='string'?saved.query.slice(0,100):'';
-  for(const [id,field] of [['role-filter','role'],['cluster-filter','cluster'],['hops','hops']]){
+  for(const [id,field] of [['role-filter','role'],['cluster-filter','cluster'],['hops','hops'],['graph-direction','direction']]){
     if([...$(id).options].some(o=>o.value===saved[field]))$(id).value=saved[field];
   }
+  $('graph-labels').checked=saved.graphLabels===true;
   work.history=Array.isArray(saved.history)?saved.history.filter(validGid).slice(-30):[];
   work.index=Number.isInteger(saved.index)?Math.min(Math.max(saved.index,-1),work.history.length-1):-1;
   work.compare=Array.isArray(saved.compare)?[...new Set(saved.compare.filter(validGid))].slice(0,2):[];
@@ -52,11 +53,11 @@ function restoreWorkspaceView(){
 }
 function saveWorkspaceView(){
   if(!work)return;
-  storageWrite(work.key+':view',{query:$('search').value,role:$('role-filter').value,cluster:$('cluster-filter').value,hops:$('hops').value,selected:selectedDetail?.node.gid||work.history[work.index]||null,history:work.history,index:work.index,compare:work.compare});
+  storageWrite(work.key+':view',{query:$('search').value,role:$('role-filter').value,cluster:$('cluster-filter').value,hops:$('hops').value,direction:$('graph-direction').value,graphLabels:$('graph-labels').checked,selected:selectedDetail?.node.gid||work.history[work.index]||null,history:work.history,index:work.index,compare:work.compare});
 }
 function setWorkspaceBusy(value){workBusy=value;refreshWorkTools();}
 function workspaceSelected(detail,navigation){
-  const gid=detail.node.gid;
+  const gid=detail.node.gid;work.labels[gid]=roleName(detail.node.role);
   if(Number.isInteger(navigation.historyIndex)&&work.history[navigation.historyIndex]===gid)work.index=navigation.historyIndex;
   else if(!(navigation.restore&&work.history[work.index]===gid)&&work.history[work.index]!==gid){
     work.history=work.history.slice(0,work.index+1);work.history.push(gid);work.history=work.history.slice(-30);work.index=work.history.length-1;
@@ -78,6 +79,7 @@ function refreshWorkTools(){
   const noteSummary=$('account-note-summary');
   if(noteSummary){const note=work.notes[selectedId];noteSummary.hidden=!(note?.status||note?.text);noteSummary.textContent=note?'Моя отметка: '+workStatuses[note.status]+(note.text?' · есть заметка':''):'';}
   decorateSavedAccounts();
+  refreshGraphNavigation();
 }
 function decorateSavedAccounts(){
   if(!work)return;

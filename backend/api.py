@@ -170,20 +170,24 @@ def report(run_id: str, gid: str, download: bool = False):
 
 
 @app.get('/api/runs/{run_id}/graph')
-def graph(run_id: str, gid: str, hops: int = Query(1, ge=1, le=2), limit: int = Query(100, ge=10, le=400)):
+def graph(run_id: str, gid: str, hops: int = Query(1, ge=1, le=2), limit: int = Query(100, ge=10, le=400),
+          direction: str = Query('all', pattern='^(all|incoming|outgoing)$')):
     run = get_run(run_id)
     lookup = {r['gid']: r for r in run.nodes}
     if gid not in lookup:
         raise HTTPException(404, 'Счёт не найден')
     eligible, frontier, parent = {gid}, {gid}, {}
+    traversed = set()
     for _ in range(hops):
         neighbors = set()
         for e in run.edges:
-            if e['source'] in frontier:
+            if direction in ('all', 'outgoing') and e['source'] in frontier:
+                traversed.add((e['source'], e['target']))
                 neighbors.add(e['target'])
                 if e['target'] not in eligible:
                     parent.setdefault(e['target'], e['source'])
-            if e['target'] in frontier:
+            if direction in ('all', 'incoming') and e['target'] in frontier:
+                traversed.add((e['source'], e['target']))
                 neighbors.add(e['source'])
                 if e['source'] not in eligible:
                     parent.setdefault(e['source'], e['target'])
@@ -201,8 +205,9 @@ def graph(run_id: str, gid: str, hops: int = Query(1, ge=1, le=2), limit: int = 
                 visible.add(item)
                 display.append(item)
     return {'nodes': [lookup[n] for n in display],
-            'edges': [e for e in run.edges if e['source'] in visible and e['target'] in visible],
-            'eligible': len(eligible), 'hidden': len(eligible - visible), 'hops': hops}
+            'edges': [e for e in run.edges if e['source'] in visible and e['target'] in visible
+                      and (direction == 'all' or (e['source'], e['target']) in traversed)],
+            'eligible': len(eligible), 'hidden': len(eligible - visible), 'hops': hops, 'direction': direction}
 
 
 @app.get('/api/runs/{run_id}/exports/{name}')

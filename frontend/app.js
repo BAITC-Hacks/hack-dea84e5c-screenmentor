@@ -6,7 +6,7 @@ const money = value => Number(value).toLocaleString('ru-RU', {maximumFractionDig
 const colors = {consolidator:'#54c8b0',transit:'#71bced',distributor:'#efb16b',terminal:'#c5cdde',coordinator:'#b298ed',peripheral:'#859eae'};
 const roleNames={consolidator:'Сбор средств',transit:'Транзит',distributor:'Распределение',terminal:'Получатель · гипотеза',coordinator:'Связующее звено',peripheral:'Недостаточно признаков'};
 const roleName=role=>roleNames[role]||role;
-let runId, summary, selectedId, selectedDetail, cy, listVersion=0, detailVersion=0, graphLimit=100;
+let runId, summary, selectedId, selectedDetail, cy, listVersion=0, detailVersion=0, graphLimit=30;
 
 async function api(path, options) {
   const response = await fetch(path, options);
@@ -38,7 +38,7 @@ async function activate(data) {
   $('stat-volume').textContent = money(summary.total_kzt);
   $('stat-boundary').textContent = fmt(summary.boundary_count);
   $('role-filter').innerHTML = '<option value="">Все роли</option>' + Object.entries(summary.role_labels).map(([role,label])=>`<option value="${escapeHTML(role)}">${escapeHTML(roleName(role))} (${summary.role_counts[role]||0})</option>`).join('');
-  $('search').value=''; $('cluster-filter').value=''; $('hops').value='1';
+  $('search').value=''; $('cluster-filter').value=''; $('hops').value='1';$('graph-direction').value='all';$('graph-labels').checked=false;
   const currentRun=runId;
   const clusters=await api(`/api/runs/${currentRun}/clusters`);
   if (currentRun!==runId) return;
@@ -71,12 +71,12 @@ async function selectNode(gid, keepLimit=false, navigation={}) {
   $('node-detail').innerHTML='<div class="empty">Загружаем карточку выбранного счёта…</div>';
   if(cy){cy.destroy();cy=null;}
   resetInvestigation(gid);
-  if(!keepLimit)graphLimit=100;
+  if(!keepLimit)graphLimit=30;
   $('node-list').querySelectorAll('[data-gid]').forEach(b=>b.classList.toggle('selected',b.dataset.gid===gid));
   $('graph-loading').hidden=false;
   try {
     const base=`/api/runs/${runId}`;
-    const [detail,graph]=await Promise.all([api(`${base}/nodes/${encodeURIComponent(gid)}`),api(`${base}/graph?${new URLSearchParams({gid,hops:$('hops').value,limit:graphLimit})}`)]);
+    const [detail,graph]=await Promise.all([api(`${base}/nodes/${encodeURIComponent(gid)}`),api(`${base}/graph?${new URLSearchParams({gid,hops:$('hops').value,limit:graphLimit,direction:$('graph-direction').value})}`)]);
     if(version!==detailVersion)return;
     selectedDetail=detail;
     renderDetail(detail);
@@ -116,22 +116,30 @@ function renderDetail(detail) {
 }
 
 function renderGraph(graph,gid) {
-  $('graph-subtitle').textContent=graph.path_label||`Связи счёта …${gid.slice(-8)} · ${graph.hops===1?'прямые переводы':'до двух переходов'}`;
+  const directionNames={all:'Все направления',incoming:'Откуда поступали деньги',outgoing:'Куда отправляли деньги'};
+  $('graph-subtitle').textContent=graph.path_label||`${directionNames[graph.direction||'all']} · ${graph.hops===1?'прямые связи':'до двух переходов'}`;
   $('graph-count').textContent=`${graph.nodes.length} из ${graph.eligible} счетов · ${graph.edges.length} связей${graph.hidden?' · скрыто '+graph.hidden:''}`;
   $('expand-button').hidden=Boolean(graph.path_label)||!graph.hidden||graphLimit>=400;
   $('return-neighborhood').hidden=!graph.path_label;
+  $('graph-direction').disabled=Boolean(graph.path_label);
+  $('less-graph').hidden=Boolean(graph.path_label)||graphLimit<=30;
+  $('graph-tooltip').hidden=true;
   if(cy)cy.destroy();
-  const elements=[...graph.nodes.map((n,i)=>({data:{id:n.gid,label:'…'+n.gid.slice(-6),color:colors[n.role],size:n.gid===gid?38:14+17*n.priority_score},position:{x:250+190*Math.cos(i*2*Math.PI/graph.nodes.length),y:220+190*Math.sin(i*2*Math.PI/graph.nodes.length)},classes:[n.gid===gid?'focused':'',n.is_seed?'seed':'',n.truncated_by_depth?'boundary':''].join(' ')})),...graph.edges.map(e=>({data:{...e,width:Math.min(3,Math.max(.7,Math.log10(e.sum_kzt+1)/3))}}))];
+  const shortIds=graphShortIdentifiers(graph.nodes);
+  const elements=[...graph.nodes.map((n,i)=>({data:{id:n.gid,label:shortIds.get(n.gid),focusLabel:roleName(n.role)+'\n'+shortIds.get(n.gid),color:colors[n.role],size:n.gid===gid?38:14+17*n.priority_score},position:{x:250+190*Math.cos(i*2*Math.PI/graph.nodes.length),y:220+190*Math.sin(i*2*Math.PI/graph.nodes.length)},classes:[n.gid===gid?'focused':'',n.is_seed?'seed':'',n.truncated_by_depth?'boundary':''].join(' ')})),...graph.edges.map(e=>({data:{...e,width:Math.min(3,Math.max(.7,Math.log10(e.sum_kzt+1)/3))}}))];
   cy=cytoscape({container:$('graph'),elements,minZoom:.1,maxZoom:4,wheelSensitivity:4,style:[
-    {selector:'node',style:{'background-color':'data(color)',width:'data(size)',height:'data(size)',label:'data(label)','font-size':8,color:'#aec2ce','text-valign':'bottom','text-margin-y':6,'text-background-color':'#182a3b','text-background-opacity':.85,'text-background-padding':2,'border-width':0}},
+    {selector:'node',style:{'background-color':'data(color)',width:'data(size)',height:'data(size)',label:'data(label)','text-opacity':0,'font-size':9,color:'#aec2ce','text-valign':'bottom','text-margin-y':6,'text-background-color':'#182a3b','text-background-opacity':.85,'text-background-padding':2,'border-width':0}},
     {selector:'edge',style:{width:'data(width)','line-color':'#49697e','target-arrow-color':'#65869b','target-arrow-shape':'triangle','curve-style':'bezier',opacity:.68,'arrow-scale':.65}},
     {selector:'.seed',style:{shape:'diamond','border-width':1,'border-color':'#d6e7ea'}},
     {selector:'.boundary',style:{'border-width':2,'border-color':'#bda26d','border-style':'dashed'}},
-    {selector:'.focused',style:{'border-width':3,'border-color':'#effbf4','font-size':10,color:'#edf7f6','z-index':5}},
-    {selector:'edge:selected',style:{'line-color':'#9de4c5','target-arrow-color':'#9de4c5',opacity:1,width:3}}
+    {selector:'node.labels-visible, node.inspected',style:{'text-opacity':1}},
+    {selector:'.focused',style:{'border-width':3,'border-color':'#effbf4','font-size':11,color:'#edf7f6','z-index':5,label:'data(focusLabel)','text-wrap':'wrap','text-opacity':1}},
+    {selector:'.muted-connection',style:{opacity:.12,'text-opacity':0}},
+    {selector:'edge.inspected, edge:selected',style:{'line-color':'#9de4c5','target-arrow-color':'#9de4c5',opacity:1,width:3}}
   ],layout:{name:'cose',animate:false,randomize:false,padding:45,nodeRepulsion:()=>85000,idealEdgeLength:()=>85,gravity:.35,numIter:500}});
   cy.on('tap','node',event=>{const id=event.target.id();if(id!==selectedId)selectNode(id).catch(showError);});
   cy.on('tap','edge',event=>{const e=event.target.data();showInfo('Наблюдаемая связь',`<p><code>${escapeHTML(e.source)}</code><br>↓<br><code>${escapeHTML(e.target)}</code></p><div class="info-metric"><span>Сумма переводов</span><strong>${money(e.sum_kzt)}</strong></div><div class="info-metric"><span>Операции</span><strong>${fmt(e.n_tx)}</strong></div><p class="muted">Агрегат из edges.parquet, сверенный с transactions.parquet.</p>`);});
+  attachGraphNavigation(graph,gid);
 }
 
 function showPayments(){
@@ -163,7 +171,7 @@ $('quality-button').addEventListener('click',showQuality);$('method-button').add
 $('reset-button').addEventListener('click',()=>api('/api/initial').then(activate).catch(showError));
 $('fit-button').addEventListener('click',()=>cy&&cy.fit(undefined,40));
 $('hops').addEventListener('change',()=>selectedId&&selectNode(selectedId).catch(showError));
-$('expand-button').addEventListener('click',()=>{graphLimit=Math.min(graphLimit+100,400);selectNode(selectedId,true).catch(showError);});
+$('expand-button').addEventListener('click',()=>{graphLimit=Math.min(graphLimit+30,400);selectNode(selectedId,true).catch(showError);});
 let searchTimer;
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadList().catch(showError),180);});
 ['role-filter','cluster-filter'].forEach(id=>$(id).addEventListener('change',()=>loadList().catch(showError)));

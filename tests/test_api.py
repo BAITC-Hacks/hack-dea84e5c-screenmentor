@@ -114,3 +114,36 @@ def test_limited_graph_retains_intermediate_connections(client):
         observed.add_nodes_from(n['gid'] for n in graph['nodes'])
         observed.add_edges_from((e['source'], e['target']) for e in graph['edges'])
         assert nx.is_connected(observed)
+
+
+@pytest.mark.parametrize('direction', ['incoming', 'outgoing'])
+@pytest.mark.parametrize('hops', [1, 2])
+def test_directional_graph_follows_payment_arrows_before_limiting(client, direction, hops):
+    import networkx as nx
+    run_id = client.get('/api/initial').json()['run_id']
+    run = api.get_run(run_id)
+    original = nx.DiGraph()
+    original.add_nodes_from(n['gid'] for n in run.nodes)
+    original.add_edges_from((e['source'], e['target']) for e in run.edges)
+    traversal = original.reverse() if direction == 'incoming' else original
+    for gid in original:
+        expected = set(nx.single_source_shortest_path_length(traversal, gid, cutoff=hops))
+        for limit in [10, 400]:
+            response = client.get(f'/api/runs/{run_id}/graph', params={'gid': gid, 'direction': direction, 'hops': hops, 'limit': limit})
+            assert response.status_code == 200
+            graph = response.json()
+            shown = {n['gid'] for n in graph['nodes']}
+            assert graph['eligible'] == len(expected)
+            assert graph['hidden'] == len(expected) - len(shown)
+            assert shown <= expected and len(shown) <= limit
+            if limit == 400:
+                assert shown == expected
+            observed = nx.DiGraph()
+            observed.add_nodes_from(shown)
+            observed.add_edges_from((e['source'], e['target']) for e in graph['edges'])
+            if direction == 'incoming':
+                observed = observed.reverse()
+            assert set(nx.single_source_shortest_path_length(observed, gid, cutoff=hops)) == shown
+            if hops == 1:
+                assert all(e['target' if direction == 'incoming' else 'source'] == gid for e in graph['edges'])
+    assert client.get(f'/api/runs/{run_id}/graph', params={'gid': gid, 'direction': 'wrong'}).status_code == 422

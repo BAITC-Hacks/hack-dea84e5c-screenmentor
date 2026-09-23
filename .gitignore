@@ -3,8 +3,9 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+.env.*
+*.parquet
 data/
 artifacts/
-analysis/results/
-analysis/*.png
+analysis/
 node_modules/

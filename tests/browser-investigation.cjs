@@ -1,0 +1,64 @@
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+(async()=>{
+  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
+  try{
+    const page=await browser.newPage({viewport:{width:1600,height:1050}});
+    const errors=[];
+    page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(process.env.BASE_URL||'http://127.0.0.1:8765');
+    await page.locator('#highlight-path').waitFor();
+    const gid=await page.locator('.detail-id').textContent();
+    assert.equal(await page.locator('#investigation-gid').textContent(),gid);
+    assert.ok(await page.locator('.path-option').count()>0);
+    await page.locator('#highlight-path').click();
+    assert.equal(await page.locator('#message').isVisible(),false);
+    await page.locator('#path-all-payments').click();
+    await page.locator('#path-payments [data-source-row]').first().click();
+    assert.match(await page.locator('#info-body').textContent(),/SHA-256/);
+    await page.locator('#info-dialog [data-close]').click();
+    await page.locator('#tab-timeline').click();
+    await page.locator('.day-bar').first().waitFor();
+    await page.locator('#tab-evidence').click();
+    await page.locator('[data-evidence-kind="outgoing"]').click();
+    await page.locator('#highlight-evidence').click();
+    await page.locator('#tab-stability').click();
+    await page.locator('.stability-summary').waitFor();
+    assert.equal(await page.locator('#investigation-body .investigation-table tbody tr').count(),8);
+    fs.mkdirSync('artifacts/browser',{recursive:true});
+    await page.locator('#investigation-panel').screenshot({path:'artifacts/browser/stability.png'});
+    await page.locator('#tab-assistant').click();
+    await page.locator('[data-topic="priority"]').click();
+    await page.locator('.assistant-answer').waitFor();
+    assert.match(await page.locator('.assistant-answer').textContent(),/приоритет/);
+    await page.locator('#assistant-response [data-source-row]').first().click();
+    await page.locator('#info-dialog [data-close]').click();
+    const popupPromise=page.waitForEvent('popup');
+    await page.locator('#report-open').click();
+    const report=await popupPromise;await report.waitForLoadState();
+    assert.match(await report.locator('body').textContent(),new RegExp(gid));
+    assert.ok(await report.locator('svg').count()>0);
+    await report.screenshot({path:'artifacts/browser/report.png',fullPage:true});
+    await report.close();
+    const downloadPromise=page.waitForEvent('download');await page.locator('#report-download').click();
+    const download=await downloadPromise;
+    assert.equal(download.suggestedFilename(),`account-${gid}.html`);
+    assert.equal(await download.failure(),null);
+    await page.locator('#tab-paths').click();
+    await page.locator('#highlight-path').waitFor();
+    await page.locator('#investigation-panel').screenshot({path:'artifacts/browser/investigation.png'});
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Mobile overflow');
+    await page.locator('#investigation-panel').screenshot({path:'artifacts/browser/investigation-mobile.png'});
+    // Rapid account changes must not leave another account's investigation on screen.
+    await page.setViewportSize({width:1600,height:1050});
+    const ids=await page.locator('.node-row').evaluateAll(rows=>rows.slice(0,3).map(r=>r.dataset.gid));
+    await page.evaluate(ids=>{ids.forEach(id=>selectNode(id));},ids);
+    await page.waitForFunction(id=>document.querySelector('.detail-id')?.textContent===id&&document.querySelector('#investigation-gid')?.textContent===id,ids.at(-1));
+    await page.locator('#highlight-path').waitFor();
+    assert.deepEqual(errors,[]);
+    console.log('Investigation browser passed: paths, source rows, timeline, fact graph, sensitivity, assistant, standalone report, download, mobile, selection race.');
+  }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

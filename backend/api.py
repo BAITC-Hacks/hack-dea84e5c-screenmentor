@@ -9,19 +9,22 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from .demo import create_demo
-from .engine import DataError, Result, analyze
+from .engine import METHOD_VERSION, DataError, Result, analyze
+from .investigation import explain, investigate, stability
+from .report import account_report
 
 ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS = Path(os.environ.get('GRAPH_ARTIFACTS_DIR', str(ROOT / 'artifacts')))
 runs: dict[str, Result] = {}
 initial_id = None
+demo_id = None
 lock = threading.RLock()
-EXPORTS = {'nodes_roles.csv', 'clusters.csv', 'top_nodes.csv', 'manifest.json'}
+EXPORTS = {'results.xlsx', 'nodes_roles.csv', 'clusters.csv', 'top_nodes.csv', 'manifest.json'}
 
 
 def new_run(source: Path, label: str, synthetic=False):
@@ -48,7 +51,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title='Граф денег', version='1.0.0', lifespan=lifespan)
+app = FastAPI(title='Граф денег', version=METHOD_VERSION, lifespan=lifespan)
 
 
 @app.middleware('http')
@@ -80,6 +83,23 @@ def get_run(run_id):
 @app.get('/api/initial')
 def initial():
     return {'run_id': initial_id, 'summary': get_run(initial_id).summary}
+
+
+@app.get('/api/demo')
+def demo():
+    """A separate synthetic run; never replace the analyst's initial dataset."""
+    global demo_id
+    with lock:
+        if get_run(initial_id).summary['synthetic']:
+            return initial()
+        if demo_id not in runs:
+            demo_id = new_run(create_demo(ARTIFACTS / 'guided-demo'), 'Синтетический пример', True)
+        return {'run_id': demo_id, 'summary': get_run(demo_id).summary}
+
+
+@app.get('/api/runs/{run_id}')
+def run_summary(run_id: str):
+    return {'run_id': run_id, 'summary': get_run(run_id).summary}
 
 
 @app.post('/api/analyze')
@@ -120,27 +140,74 @@ def node_detail(run_id: str, gid: str):
     return {'node': record, 'transactions': payments}
 
 
+def account_run(run_id, gid):
+    run = get_run(run_id)
+    if not any(n['gid'] == gid for n in run.nodes):
+        raise HTTPException(404, 'Счёт не найден')
+    return run
+
+
+@app.get('/api/runs/{run_id}/nodes/{gid}/investigation')
+def investigation(run_id: str, gid: str):
+    return investigate(account_run(run_id, gid), gid)
+
+
+@app.get('/api/runs/{run_id}/nodes/{gid}/stability')
+def sensitivity(run_id: str, gid: str):
+    return stability(account_run(run_id, gid), gid)
+
+
+@app.get('/api/runs/{run_id}/nodes/{gid}/assistant')
+def assistant(run_id: str, gid: str, topic: str = Query('priority', pattern='^(priority|role|next|chronology)$')):
+    return explain(account_run(run_id, gid), gid, topic)
+
+
+@app.get('/api/runs/{run_id}/nodes/{gid}/report')
+def report(run_id: str, gid: str, download: bool = False):
+    result = account_report(account_run(run_id, gid), gid)
+    headers = {'Content-Disposition': f'attachment; filename="account-{gid}.html"'} if download else {}
+    return HTMLResponse(result, headers=headers)
+
+
 @app.get('/api/runs/{run_id}/graph')
-def graph(run_id: str, gid: str, hops: int = Query(1, ge=1, le=2), limit: int = Query(100, ge=10, le=400)):
+def graph(run_id: str, gid: str, hops: int = Query(1, ge=1, le=2), limit: int = Query(100, ge=10, le=400),
+          direction: str = Query('all', pattern='^(all|incoming|outgoing)$')):
     run = get_run(run_id)
     lookup = {r['gid']: r for r in run.nodes}
     if gid not in lookup:
         raise HTTPException(404, 'Счёт не найден')
-    eligible, frontier = {gid}, {gid}
+    eligible, frontier, parent = {gid}, {gid}, {}
+    traversed = set()
     for _ in range(hops):
         neighbors = set()
         for e in run.edges:
-            if e['source'] in frontier:
+            if direction in ('all', 'outgoing') and e['source'] in frontier:
+                traversed.add((e['source'], e['target']))
                 neighbors.add(e['target'])
-            if e['target'] in frontier:
+                if e['target'] not in eligible:
+                    parent.setdefault(e['target'], e['source'])
+            if direction in ('all', 'incoming') and e['target'] in frontier:
+                traversed.add((e['source'], e['target']))
                 neighbors.add(e['source'])
+                if e['source'] not in eligible:
+                    parent.setdefault(e['source'], e['target'])
         frontier = neighbors - eligible
         eligible |= neighbors
     ordered = sorted(eligible - {gid}, key=lambda n: (-lookup[n]['priority_score'], int(n)))
-    visible = {gid, *ordered[:limit - 1]}
-    return {'nodes': [lookup[n] for n in [gid, *ordered[:limit - 1]]],
-            'edges': [e for e in run.edges if e['source'] in visible and e['target'] in visible],
-            'eligible': len(eligible), 'hidden': len(eligible - visible), 'hops': hops}
+    visible, display = {gid}, [gid]
+    for candidate in ordered:
+        chain, current = [], candidate
+        while current not in visible:
+            chain.append(current)
+            current = parent[current]
+        if len(visible) + len(chain) <= limit:
+            for item in reversed(chain):
+                visible.add(item)
+                display.append(item)
+    return {'nodes': [lookup[n] for n in display],
+            'edges': [e for e in run.edges if e['source'] in visible and e['target'] in visible
+                      and (direction == 'all' or (e['source'], e['target']) in traversed)],
+            'eligible': len(eligible), 'hidden': len(eligible - visible), 'hops': hops, 'direction': direction}
 
 
 @app.get('/api/runs/{run_id}/exports/{name}')
@@ -148,12 +215,14 @@ def export(run_id: str, name: str):
     run = get_run(run_id)
     if name not in EXPORTS:
         raise HTTPException(404, 'Неизвестный файл')
-    return FileResponse(run.output_dir / name, filename=name, media_type='application/json' if name.endswith('.json') else 'text/csv; charset=utf-8')
+    media_type = ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if name.endswith('.xlsx')
+                  else 'application/json' if name.endswith('.json') else 'text/csv; charset=utf-8')
+    return FileResponse(run.output_dir / name, filename=name, media_type=media_type)
 
 
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', 'method': '1.0.0'}
+    return {'status': 'ok', 'method': METHOD_VERSION}
 
 
 @app.get('/')

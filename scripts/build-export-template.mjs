@@ -21,11 +21,18 @@ for(const [name,headers,samples,widths,formats] of layouts){
     sheet.getRangeByIndexes(1,col,1,1).setNumberFormat(formats[col]);
     sheet.getRangeByIndexes(1,col,1,1).format.wrapText=true;
   }
+  const table=sheet.getRangeByIndexes(0,0,2,headers.length);
+  table.format.horizontalAlignment='center';
+  table.format.verticalAlignment='center';
+  table.format.borders={preset:'all',style:'thin',color:'#8497A3'};
   sheet.freezePanes.freezeRows(1);
   sheet.getRangeByIndexes(1,0,1,headers.length).format.rowHeight=42;
 }
 book.recalculate();
+for(let index=0;index<layouts.length;index++){
+  const [name,headers]=layouts[index];
+  const preview=await book.render({sheetName:name,range:`A1:${String.fromCharCode(64+headers.length)}2`,scale:1,format:'png'});
+  await fs.writeFile(`artifacts/xlsx-template/template-${index+1}.png`,new Uint8Array(await preview.arrayBuffer()));
+}
 await (await SpreadsheetFile.exportXlsx(book)).save('backend/assets/export-template.xlsx');
 console.log((await book.inspect({kind:'region',sheetId:'Все счета',range:'A1:F2',maxChars:1200})).ndjson);
-const preview=await book.render({sheetName:'Все счета',range:'A1:F2',scale:1,format:'png'});
-await fs.writeFile('artifacts/xlsx-template/template.png',new Uint8Array(await preview.arrayBuffer()));

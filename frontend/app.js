@@ -24,6 +24,7 @@ function showInfo(title, html) { $('info-title').textContent = title; $('info-bo
 async function activate(data) {
   detailVersion++; listVersion++;
   runId=data.run_id; summary=data.summary; selectedId=null; selectedDetail=null;
+  beginWorkspace(data);
   resetInvestigation(null);
   clearError();
   $('dataset-label').textContent = summary.label;
@@ -42,10 +43,13 @@ async function activate(data) {
   const clusters=await api(`/api/runs/${currentRun}/clusters`);
   if (currentRun!==runId) return;
   $('cluster-filter').innerHTML='<option value="">Все группы</option>'+clusters.sort((a,b)=>b.n_nodes-a.n_nodes).map(c=>`<option value="${c.cluster_id}">Группа ${c.cluster_id+1} · ${c.n_nodes} счетов</option>`).join('');
-  await loadList(true);
+  const restored=restoreWorkspaceView();
+  await loadList(!restored);
+  if(restored){try{await selectNode(restored,false,{restore:true});}catch{await loadList(true);}}
 }
 
 async function loadList(selectFirst=false) {
+  saveWorkspaceView();
   const version=++listVersion;
   const params=new URLSearchParams({q:$('search').value.trim(),role:$('role-filter').value,limit:'100'});
   if ($('cluster-filter').value!=='') params.set('cluster',$('cluster-filter').value);
@@ -55,13 +59,15 @@ async function loadList(selectFirst=false) {
   $('list-foot').textContent=`Показано ${data.shown} из ${fmt(data.total)} · сортировка по приоритету`;
   $('node-list').innerHTML=data.items.length?data.items.map(n=>`<button class="node-row${n.gid===selectedId?' selected':''}" data-gid="${escapeHTML(n.gid)}" title="${escapeHTML(n.gid)}"><span class="rank">${n.rank}</span><span class="row-content"><span class="row-id">${escapeHTML(n.gid)}</span><span class="row-role"><i class="role-dot" style="background:${colors[n.role]}"></i>${escapeHTML(roleName(n.role))}</span></span><span class="row-score">${Math.round(n.priority_score*100)}</span></button>`).join(''):'<div class="empty">Счета не найдены.<br>Проверьте номер или сбросьте фильтры.</div>';
   $('node-list').querySelectorAll('[data-gid]').forEach(b=>b.addEventListener('click',()=>selectNode(b.dataset.gid).catch(showError)));
+  decorateSavedAccounts();
   if(selectFirst&&data.items.length)await selectNode(data.items[0].gid);
 }
 
-async function selectNode(gid, keepLimit=false) {
+async function selectNode(gid, keepLimit=false, navigation={}) {
   const version=++detailVersion;
   selectedId=gid;
   selectedDetail=null;
+  setWorkspaceBusy(true);
   $('node-detail').innerHTML='<div class="empty">Загружаем карточку выбранного счёта…</div>';
   if(cy){cy.destroy();cy=null;}
   resetInvestigation(gid);
@@ -75,7 +81,8 @@ async function selectNode(gid, keepLimit=false) {
     selectedDetail=detail;
     renderDetail(detail);
     renderGraph(graph,gid);
-  } finally {if(version===detailVersion)$('graph-loading').hidden=true;}
+    workspaceSelected(detail,navigation);
+  } finally {if(version===detailVersion){$('graph-loading').hidden=true;setWorkspaceBusy(false);}}
 }
 
 function renderDetail(detail) {
@@ -105,6 +112,7 @@ function renderDetail(detail) {
   $('copy-id').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(n.gid);$('copy-id').textContent='Скопировано';}catch{showInfo('Идентификатор счёта',`<p><code>${escapeHTML(n.gid)}</code></p>`);}});
   $('show-payments').addEventListener('click',showPayments);
   attachInvestigationActions(detail);
+  attachAccountTools(detail);
 }
 
 function renderGraph(graph,gid) {
@@ -160,4 +168,4 @@ let searchTimer;
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadList().catch(showError),180);});
 ['role-filter','cluster-filter'].forEach(id=>$(id).addEventListener('change',()=>loadList().catch(showError)));
 window.addEventListener('resize',()=>{if(cy){cy.resize();cy.fit(undefined,40);}});
-api('/api/initial').then(activate).catch(showError);
+// workspace.js initializes the page after all interface modules have loaded.

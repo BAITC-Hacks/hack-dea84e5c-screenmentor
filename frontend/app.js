@@ -131,5 +131,5 @@ $('expand-button').addEventListener('click',()=>{graphLimit=Math.min(graphLimit+
 let searchTimer;
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadList().catch(showError),180);});
 ['role-filter','cluster-filter'].forEach(id=>$(id).addEventListener('change',()=>loadList().catch(showError)));
-window.addEventListener('resize',()=>{if(cy)cy.resize();});
+window.addEventListener('resize',()=>{if(cy){cy.resize();cy.fit(undefined,40);}});
 api('/api/initial').then(activate).catch(showError);

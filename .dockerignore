@@ -1,0 +1,10 @@
+.git
+.venv
+.env
+data
+artifacts
+analysis
+node_modules
+__pycache__
+.pytest_cache
+*.parquet

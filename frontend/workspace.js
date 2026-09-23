@@ -44,7 +44,8 @@ function restoreWorkspaceView(){
   for(const [id,field] of [['role-filter','role'],['cluster-filter','cluster'],['hops','hops'],['graph-direction','direction']]){
     if([...$(id).options].some(o=>o.value===saved[field]))$(id).value=saved[field];
   }
-  $('graph-labels').checked=saved.graphLabels===true;
+  // Restore labels for existing workspaces once, then remember explicit changes.
+  $('graph-labels').checked=saved.graphLabelsVersion===2?saved.graphLabels!==false:true;
   work.history=Array.isArray(saved.history)?saved.history.filter(validGid).slice(-30):[];
   work.index=Number.isInteger(saved.index)?Math.min(Math.max(saved.index,-1),work.history.length-1):-1;
   work.compare=Array.isArray(saved.compare)?[...new Set(saved.compare.filter(validGid))].slice(0,2):[];
@@ -53,7 +54,7 @@ function restoreWorkspaceView(){
 }
 function saveWorkspaceView(){
   if(!work)return;
-  storageWrite(work.key+':view',{query:$('search').value,role:$('role-filter').value,cluster:$('cluster-filter').value,hops:$('hops').value,direction:$('graph-direction').value,graphLabels:$('graph-labels').checked,selected:selectedDetail?.node.gid||work.history[work.index]||null,history:work.history,index:work.index,compare:work.compare});
+  storageWrite(work.key+':view',{query:$('search').value,role:$('role-filter').value,cluster:$('cluster-filter').value,hops:$('hops').value,direction:$('graph-direction').value,graphLabels:$('graph-labels').checked,graphLabelsVersion:2,selected:selectedDetail?.node.gid||work.history[work.index]||null,history:work.history,index:work.index,compare:work.compare});
 }
 function setWorkspaceBusy(value){workBusy=value;refreshWorkTools();}
 function workspaceSelected(detail,navigation){

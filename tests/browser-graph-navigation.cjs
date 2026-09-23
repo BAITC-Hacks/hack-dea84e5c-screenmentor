@@ -10,7 +10,9 @@ const fs=require('node:fs');
     const first=await page.locator('.detail-id').textContent();
     assert.ok(await page.evaluate(()=>cy.nodes().length<=30));
     assert.equal(await page.locator('#graph-back').isDisabled(),true);
-    assert.ok(await page.evaluate(()=>cy.nodes().not('.focused').every(n=>n.style('text-opacity')==='0')));
+    assert.equal(await page.locator('#graph-labels').isChecked(),true);
+    assert.ok(await page.evaluate(()=>cy.nodes().not('.focused').every(n=>n.style('text-opacity')==='1')));
+    assert.ok(await page.locator('.brandmark img').evaluate(img=>img.complete&&img.naturalWidth>0));
     const next=await page.evaluate(()=>cy.nodes().not('.focused').sort((a,b)=>a.degree()-b.degree()).first().id());
     await page.evaluate(id=>cy.getElementById(id).emit('mouseover'),next);
     assert.match(await page.locator('#graph-tooltip').textContent(),new RegExp(next));
@@ -39,15 +41,27 @@ const fs=require('node:fs');
     await page.locator('#graph-labels').check();assert.ok(await page.evaluate(()=>cy.nodes().every(n=>n.hasClass('labels-visible'))));
     await page.reload();await page.locator('#highlight-path').waitFor();
     assert.equal(await page.locator('#graph-direction').inputValue(),'outgoing');assert.equal(await page.locator('#graph-labels').isChecked(),true);
+    await page.locator('#graph-labels').uncheck();
+    await page.reload();await page.locator('#highlight-path').waitFor();
+    assert.equal(await page.locator('#graph-labels').isChecked(),false);
+    assert.ok(await page.evaluate(()=>cy.nodes().not('.focused').every(n=>n.style('text-opacity')==='0')));
+    // Previous release saved hidden labels by default. Migrate without losing navigation.
+    await page.evaluate(()=>{const key=work.key+':view',saved=JSON.parse(localStorage.getItem(key));delete saved.graphLabelsVersion;localStorage.setItem(key,JSON.stringify(saved));});
+    await page.reload();await page.locator('#highlight-path').waitFor();
+    assert.equal(await page.locator('#graph-labels').isChecked(),true);
+    assert.equal(await page.locator('#graph-direction').inputValue(),'outgoing');
+    assert.equal(await page.locator('.detail-id').textContent(),first);
+    assert.ok(await page.evaluate(()=>cy.nodes().not('.focused').every(n=>n.style('text-opacity')==='1')));
     await page.locator('#highlight-path').click();assert.equal(await page.locator('#graph-direction').isDisabled(),true);
     await page.locator('#return-neighborhood').click();await page.locator('#graph-loading').waitFor({state:'hidden'});assert.equal(await page.locator('#graph-direction').isDisabled(),false);
     assert.ok(await page.evaluate(()=>new Set(graphShortIdentifiers([{gid:'100000000000000001'},{gid:'200000000000000001'}]).values()).size===2));
     fs.mkdirSync('artifacts/graph-navigation',{recursive:true});
     await page.locator('#graph-direction').selectOption('all');await page.locator('#graph-loading').waitFor({state:'hidden'});
-    await page.locator('#graph-labels').uncheck();
+    await page.locator('#graph-labels').check();
     for(const width of [1600,1280,1024,390]){
       await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Overflow at ${width}`);
       await page.locator('.graph-panel').screenshot({path:`artifacts/graph-navigation/graph-${width}.png`});
+      if(width===1600||width===390){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:`artifacts/graph-navigation/brand-${width}.png`});}
     }
     assert.deepEqual(errors,[]);
     console.log('Graph navigation passed: canvas selection, back/forward, history links, incoming/outgoing, display limits, hover, labels, reload, focused-path return, short-ID collisions, responsive layout.');

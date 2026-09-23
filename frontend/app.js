@@ -38,7 +38,7 @@ async function activate(data) {
   $('stat-volume').textContent = money(summary.total_kzt);
   $('stat-boundary').textContent = fmt(summary.boundary_count);
   $('role-filter').innerHTML = '<option value="">Все роли</option>' + Object.entries(summary.role_labels).map(([role,label])=>`<option value="${escapeHTML(role)}">${escapeHTML(roleName(role))} (${summary.role_counts[role]||0})</option>`).join('');
-  $('search').value=''; $('cluster-filter').value=''; $('hops').value='1';$('graph-direction').value='all';$('graph-labels').checked=false;
+  $('search').value=''; $('cluster-filter').value=''; $('hops').value='1';$('graph-direction').value='all';$('graph-labels').checked=true;
   const currentRun=runId;
   const clusters=await api(`/api/runs/${currentRun}/clusters`);
   if (currentRun!==runId) return;

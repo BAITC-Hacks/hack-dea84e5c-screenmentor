@@ -92,7 +92,7 @@ function renderGraph(graph,gid) {
   $('expand-button').hidden=!graph.hidden||graphLimit>=400;
   if(cy)cy.destroy();
   const elements=[...graph.nodes.map((n,i)=>({data:{id:n.gid,label:'…'+n.gid.slice(-6),color:colors[n.role],size:n.gid===gid?38:14+17*n.priority_score},position:{x:250+190*Math.cos(i*2*Math.PI/graph.nodes.length),y:220+190*Math.sin(i*2*Math.PI/graph.nodes.length)},classes:[n.gid===gid?'focused':'',n.is_seed?'seed':'',n.truncated_by_depth?'boundary':''].join(' ')})),...graph.edges.map(e=>({data:{...e,width:Math.min(3,Math.max(.7,Math.log10(e.sum_kzt+1)/3))}}))];
-  cy=cytoscape({container:$('graph'),elements,minZoom:.1,maxZoom:4,wheelSensitivity:.25,style:[
+  cy=cytoscape({container:$('graph'),elements,minZoom:.1,maxZoom:4,wheelSensitivity:4,style:[
     {selector:'node',style:{'background-color':'data(color)',width:'data(size)',height:'data(size)',label:'data(label)','font-size':8,color:'#aec2ce','text-valign':'bottom','text-margin-y':6,'text-background-color':'#182a3b','text-background-opacity':.85,'text-background-padding':2,'border-width':0}},
     {selector:'edge',style:{width:'data(width)','line-color':'#49697e','target-arrow-color':'#65869b','target-arrow-shape':'triangle','curve-style':'bezier',opacity:.68,'arrow-scale':.65}},
     {selector:'.seed',style:{shape:'diamond','border-width':1,'border-color':'#d6e7ea'}},

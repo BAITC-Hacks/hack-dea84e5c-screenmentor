@@ -17,7 +17,7 @@ ROLE_LABELS = {
     'distributor': 'Распределение', 'terminal': 'Конечный получатель · гипотеза',
     'coordinator': 'Связующее звено', 'peripheral': 'Недостаточно признаков',
 }
-METHOD_VERSION = '1.0.0'
+METHOD_VERSION = '1.1.0'
 SCHEMAS = {
     'nodes': ['gid', 'depth', 'is_seed'],
     'edges': ['src', 'dst', 'sum_kzt', 'n_tx', 'depth'],
@@ -165,7 +165,9 @@ def analyze(data_dir: Path, output_dir: Path, label='Загруженный на
             in_kzt=float(ink), out_kzt=float(outk), in_tx=int(intx), out_tx=int(outtx), pass_through=ratio,
             pagerank=float(pr[gid]), betweenness=float(between[gid]), seed_branches=int(reaches[gid]),
             cluster_id=membership[gid], cross_communities=cross, truncated_by_depth=truncated, isolated=isolated,
-            near_period_end=bool(tail), lagged_out_tx=lagged, active_out_days=len(outgoing_days[gid])))
+            near_period_end=bool(tail), lagged_out_tx=lagged, active_out_days=len(outgoing_days[gid]),
+            active_in_days=len(incoming_days[gid]),
+            observation_days_after_last_in=(period_end - last_in[gid]).days if gid in last_in else None))
     frame = pd.DataFrame(rows).set_index('gid')
     for column in ['pagerank', 'betweenness']:
         # Zero structural evidence must remain zero, even when many nodes tie.
@@ -181,10 +183,14 @@ def analyze(data_dir: Path, output_dir: Path, label='Загруженный на
         if f['out_deg'] >= 5:
             scores['distributor'] = .7 * min(f['out_deg'] / 25, 1) + .3 * min(f['out_tx'] / 40, 1)
         ratio = f['pass_through']
-        if not f['is_seed'] and f['in_deg'] and f['out_deg'] and pd.notna(ratio) and .5 <= ratio <= 1.5:
+        if not f['is_seed'] and f['in_deg'] and f['out_deg'] and f['lagged_out_tx'] > 0 and pd.notna(ratio) and .5 <= ratio <= 1.5:
             balance = max(0, 1 - abs(ratio - 1) / .5)
             scores['transit'] = .45 * balance + .35 * min(f['lagged_out_tx'] / max(f['out_tx'], 1) / .5, 1) + .2 * min(f['active_out_days'] / 3, 1)
-        if f['in_deg'] > 0 and f['out_deg'] == 0 and not f['truncated_by_depth']:
+        # A single observed receipt is insufficient. Require repeated receipts,
+        # multiple counterparties/days and a follow-up window in this dataset.
+        if (f['in_deg'] >= 2 and f['in_tx'] >= 3 and f['active_in_days'] >= 2
+                and f['out_deg'] == 0 and not f['truncated_by_depth']
+                and f['observation_days_after_last_in'] >= 3):
             scores['terminal'] = .35 + .3 * min(f['in_deg'] / 5, 1) + .15 * min(f['in_tx'] / 10, 1) + (.2 if not f['near_period_end'] else 0)
         if f['seed_branches'] >= 2 and f['cross_communities'] >= 2 and f['betweenness_pct'] >= .75 and f['out_deg']:
             scores['coordinator'] = .5 * f['betweenness_pct'] + .3 * min(f['seed_branches'] / 5, 1) + .2 * min(f['cross_communities'] / 4, 1)
@@ -216,6 +222,8 @@ def analyze(data_dir: Path, output_dir: Path, label='Загруженный на
             next_checks.append('Запросить операции после последней даты периода.')
         if role == 'transit':
             limitations.append('Близость по календарным дням не доказывает передачу тех же денежных средств.')
+        if f['in_deg'] > 0 and f['out_deg'] == 0 and not f['truncated_by_depth']:
+            limitations.append('В выборке видны только поступления. Отсутствие исходящих не устанавливает конечное назначение счёта.')
         if not next_checks:
             next_checks.append('Проверить назначение наблюдаемых операций и возможное законное объяснение структуры переводов.')
         reason = f'{ROLE_LABELS[role]}. Вход: {f["in_deg"]} контр., {f["in_tx"]} оп.; выход: {f["out_deg"]} контр., {f["out_tx"]} оп.; ветвей seed: {f["seed_branches"]}.'

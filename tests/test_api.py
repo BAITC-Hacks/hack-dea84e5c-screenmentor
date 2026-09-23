@@ -56,3 +56,35 @@ def test_optional_authentication(client, monkeypatch):
     assert client.get('/api/initial').status_code == 401
     assert client.get('/api/initial', auth=('analyst', 'wrong')).status_code == 401
     assert client.get('/api/initial', auth=('analyst', 'test-only-password')).status_code == 200
+
+
+def test_investigation_routes_and_report_download(client):
+    run_id = client.get('/api/initial').json()['run_id']
+    base = '/api/runs/' + run_id
+    gid = client.get(base + '/nodes').json()['items'][0]['gid']
+    account = base + '/nodes/' + gid
+    data = client.get(account + '/investigation').json()
+    assert data['gid'] == gid and data['paths']
+    assert client.get(account + '/stability').json()['selected']['gid'] == gid
+    assert client.get(account + '/assistant?topic=next').json()['mode'] == 'local_rules'
+    assert client.get(account + '/assistant?topic=arbitrary').status_code == 422
+    report = client.get(account + '/report?download=true')
+    assert report.status_code == 200
+    assert 'attachment;' in report.headers['content-disposition']
+    assert 'text/html' in report.headers['content-type']
+    assert gid in report.text
+    for suffix in ['investigation', 'stability', 'assistant', 'report']:
+        assert client.get(base + '/nodes/unknown/' + suffix).status_code == 404
+
+
+def test_limited_graph_retains_intermediate_connections(client):
+    import networkx as nx
+    run_id = client.get('/api/initial').json()['run_id']
+    base = '/api/runs/' + run_id
+    for node in client.get(base + '/nodes').json()['items']:
+        graph = client.get(base + '/graph', params={'gid': node['gid'], 'hops': 2, 'limit': 10}).json()
+        assert len(graph['nodes']) <= 10
+        observed = nx.Graph()
+        observed.add_nodes_from(n['gid'] for n in graph['nodes'])
+        observed.add_edges_from((e['source'], e['target']) for e in graph['edges'])
+        assert nx.is_connected(observed)

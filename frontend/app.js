@@ -22,6 +22,7 @@ function showInfo(title, html) { $('info-title').textContent = title; $('info-bo
 async function activate(data) {
   detailVersion++; listVersion++;
   runId=data.run_id; summary=data.summary; selectedId=null; selectedDetail=null;
+  resetInvestigation(null);
   clearError();
   $('dataset-label').textContent = summary.label;
   $('dataset-label').classList.toggle('synthetic', summary.synthetic);
@@ -58,6 +59,10 @@ async function loadList(selectFirst=false) {
 async function selectNode(gid, keepLimit=false) {
   const version=++detailVersion;
   selectedId=gid;
+  selectedDetail=null;
+  $('node-detail').innerHTML='<div class="empty">Загружаем карточку выбранного счёта…</div>';
+  if(cy){cy.destroy();cy=null;}
+  resetInvestigation(gid);
   if(!keepLimit)graphLimit=100;
   $('node-list').querySelectorAll('[data-gid]').forEach(b=>b.classList.toggle('selected',b.dataset.gid===gid));
   $('graph-loading').hidden=false;
@@ -78,10 +83,11 @@ function renderDetail(detail) {
   $('node-detail').innerHTML=`<div class="detail-id-label"><span>ИДЕНТИФИКАТОР СЧЁТА</span><button class="copy-button" id="copy-id">Копировать</button></div><div class="detail-id">${escapeHTML(n.gid)}</div><div class="badges"><span class="badge">${escapeHTML(n.role_label)}</span>${n.is_seed?'<span class="badge neutral">Стартовый</span>':''}${n.truncated_by_depth?'<span class="badge amber">Граница обхода</span>':''}${n.isolated?'<span class="badge amber">Нет операций</span>':''}<span class="badge neutral">Сообщество ${n.cluster_id+1}</span></div><div class="score-line"><span>Приоритет проверки</span><strong>${score}<small> / 100</small></strong></div><div class="score-bar"><i style="width:${score}%"></i></div><div class="explain-note">Оценка по правилам. Не вероятность виновности.<br>Выраженность признаков роли: ${Math.round(n.role_score*100)} / 100.</div><div class="detail-section"><h3 class="section-label">ИЗ ЧЕГО СЛОЖИЛСЯ ПРИОРИТЕТ</h3>${Object.entries(contributions).map(([k,v])=>`<div class="contribution"><span>${v}</span><strong>+${(n.contributions[k]*100).toFixed(1)}</strong></div>`).join('')}</div><div class="detail-section"><h3 class="section-label">ПОДТВЕРЖДАЮЩИЕ ФАКТЫ</h3><div class="facts">${n.facts.map(f=>`<div class="fact"><span>${escapeHTML(f.label)}</span><strong>${escapeHTML(f.value)}</strong></div>`).join('')}</div><button class="evidence-button" id="show-payments">Проверить исходные переводы (${detail.transactions.length}) ↗</button></div><div class="detail-section"><h3 class="section-label">ОГРАНИЧЕНИЯ ВЫВОДА</h3><div class="limitations">${n.limitations.map(v=>`<p>${escapeHTML(v)}</p>`).join('')}</div></div><div class="detail-section"><h3 class="section-label">СЛЕДУЮЩАЯ ПРОВЕРКА</h3>${n.next_checks.map(v=>`<p class="next-check">${escapeHTML(v)}</p>`).join('')}</div>${n.alternatives.length?`<div class="detail-section"><h3 class="section-label">ДРУГИЕ НАБЛЮДАЕМЫЕ ПРИЗНАКИ</h3>${n.alternatives.map(a=>`<div class="contribution"><span>${escapeHTML(a.label)}</span><strong>${Math.round(a.score*100)} / 100</strong></div>`).join('')}</div>`:''}`;
   $('copy-id').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(n.gid);$('copy-id').textContent='Скопировано';}catch{showInfo('Идентификатор счёта',`<p><code>${escapeHTML(n.gid)}</code></p>`);}});
   $('show-payments').addEventListener('click',showPayments);
+  attachInvestigationActions(detail);
 }
 
 function renderGraph(graph,gid) {
-  $('graph-subtitle').textContent=`Окружение счёта …${gid.slice(-8)} · ${graph.hops===1?'один шаг':'два шага'}`;
+  $('graph-subtitle').textContent=graph.path_label||`Окружение счёта …${gid.slice(-8)} · ${graph.hops===1?'один шаг':'два шага'}`;
   $('graph-count').textContent=`${graph.nodes.length} из ${graph.eligible} счетов · ${graph.edges.length} связей${graph.hidden?' · скрыто '+graph.hidden:''}`;
   $('expand-button').hidden=!graph.hidden||graphLimit>=400;
   if(cy)cy.destroy();
@@ -111,7 +117,7 @@ function showQuality(){
 }
 
 function showMethod(){
-  showInfo('Как устроен расчёт',`<p>Метод 1.0: документированные правила по наблюдаемому графу. Внешняя языковая модель в текущем прототипе не используется.</p><div class="quality-item"><strong>Приоритет:</strong> 35% структурной значимости + 30% схождения стартовых ветвей + 20% наблюдаемого оборота + 15% выраженности роли. Это очередь внимания, а не вероятность виновности.</div><div class="quality-item"><strong>Роли:</strong> сбор, распределение, транзит, предполагаемый конечный получатель, связующее звено и недостаток признаков. Один счёт может иметь несколько сигналов.</div><div class="quality-item"><strong>Граница:</strong> отсутствие исходящих на четвёртом колене не подтверждает остановку денег.</div><div class="quality-item"><strong>Сообщества:</strong> Louvain на неориентированной проекции с суммой весов двух направлений, seed=42. Денежные стрелки в интерфейсе сохраняют направление.</div><div class="quality-item"><strong>Воспроизводимость:</strong> версии, хеши файлов и параметры сохранены в manifest.json. Полные правила и ограничения описаны в README.</div>`);
+  showInfo('Как устроен расчёт',`<p>Метод 1.1: документированные правила по наблюдаемому графу. Внешняя языковая модель не используется; помощник объясняет рассчитанные факты.</p><div class="quality-item"><strong>Приоритет:</strong> 35% структурной значимости + 30% схождения стартовых ветвей + 20% наблюдаемого оборота + 15% выраженности роли. Это очередь внимания, а не вероятность виновности.</div><div class="quality-item"><strong>Роли:</strong> сбор, распределение, транзит, предполагаемый конечный получатель, связующее звено и недостаток признаков. Для транзита нужны исходящие через 1–2 дня после входящих; для конечного получателя — повторные поступления от нескольких контрагентов в разные дни и окно наблюдения от 3 дней.</div><div class="quality-item"><strong>Граница:</strong> отсутствие исходящих на четвёртом колене не подтверждает остановку денег.</div><div class="quality-item"><strong>Сообщества:</strong> Louvain на неориентированной проекции с суммой весов двух направлений, seed=42. Денежные стрелки в интерфейсе сохраняют направление.</div><div class="quality-item"><strong>Воспроизводимость:</strong> версии, хеши файлов и параметры сохранены в manifest.json. Полные правила и ограничения описаны в README.</div>`);
 }
 
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));

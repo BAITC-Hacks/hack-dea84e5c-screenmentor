@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+data/
+artifacts/
+analysis/results/
+analysis/*.png
+node_modules/

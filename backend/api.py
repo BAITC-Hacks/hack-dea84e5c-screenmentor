@@ -23,7 +23,7 @@ ARTIFACTS = Path(os.environ.get('GRAPH_ARTIFACTS_DIR', str(ROOT / 'artifacts')))
 runs: dict[str, Result] = {}
 initial_id = None
 lock = threading.RLock()
-EXPORTS = {'nodes_roles.csv', 'clusters.csv', 'top_nodes.csv', 'manifest.json'}
+EXPORTS = {'results.xlsx', 'nodes_roles.csv', 'clusters.csv', 'top_nodes.csv', 'manifest.json'}
 
 
 def new_run(source: Path, label: str, synthetic=False):
@@ -192,7 +192,9 @@ def export(run_id: str, name: str):
     run = get_run(run_id)
     if name not in EXPORTS:
         raise HTTPException(404, 'Неизвестный файл')
-    return FileResponse(run.output_dir / name, filename=name, media_type='application/json' if name.endswith('.json') else 'text/csv; charset=utf-8')
+    media_type = ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if name.endswith('.xlsx')
+                  else 'application/json' if name.endswith('.json') else 'text/csv; charset=utf-8')
+    return FileResponse(run.output_dir / name, filename=name, media_type=media_type)
 
 
 @app.get('/api/health')

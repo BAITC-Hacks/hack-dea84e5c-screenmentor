@@ -33,6 +33,10 @@ def test_analysis_search_graph_and_exports(client):
     response = client.get(base + '/exports/nodes_roles.csv')
     assert response.status_code == 200 and gid in response.text
     assert response.headers['cache-control'] == 'no-store'
+    excel = client.get(base + '/exports/results.xlsx')
+    assert excel.status_code == 200 and excel.content.startswith(b'PK')
+    assert excel.headers['content-type'] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    assert 'results.xlsx' in excel.headers['content-disposition']
     assert client.get(base + '/exports/secret.txt').status_code == 404
     assert client.get(base + '/nodes/unknown').status_code == 404
     assert client.get(base + '/graph', params={'gid': gid, 'hops': 9}).status_code == 422

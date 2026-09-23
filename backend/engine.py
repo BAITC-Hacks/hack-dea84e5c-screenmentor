@@ -12,6 +12,8 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+from .excel_export import write_workbook
+
 ROLE_LABELS = {
     'consolidator': 'Сбор средств', 'transit': 'Транзит',
     'distributor': 'Распределение', 'terminal': 'Конечный получатель · гипотеза',
@@ -263,10 +265,10 @@ def analyze(data_dir: Path, output_dir: Path, label='Загруженный на
     output_dir.mkdir(parents=True, exist_ok=True)
     export_fields = ['gid', 'role', 'role_score', 'cluster_id', 'priority_score', 'evidence']
     export_frame = pd.DataFrame([{k: r[k] for k in export_fields} for r in records])
-    export_frame.to_csv(output_dir / 'nodes_roles.csv', index=False)
-    pd.DataFrame(clusters).to_csv(output_dir / 'clusters.csv', index=False)
+    export_frame.to_csv(output_dir / 'nodes_roles.csv', index=False, encoding='utf-8-sig')
+    pd.DataFrame(clusters).to_csv(output_dir / 'clusters.csv', index=False, encoding='utf-8-sig')
     pd.DataFrame([dict(rank=r['rank'], gid=r['gid'], role=r['role'], priority_score=r['priority_score'],
-        why=f'{r["evidence"]} Приоритет {r["priority_score"]:.3f}; эвристика проверки.') for r in records[:max(20, min(100, len(records)))]]).to_csv(output_dir / 'top_nodes.csv', index=False)
+        why=f'{r["evidence"]} Приоритет {r["priority_score"]:.3f}; эвристика проверки.') for r in records[:max(20, min(100, len(records)))]]).to_csv(output_dir / 'top_nodes.csv', index=False, encoding='utf-8-sig')
     warnings = [f'{duplicate_count} повторяющихся строк сохранены: отдельного ID операции нет.',
         'Суммы и число операций совпадают с агрегатами; роли — гипотезы, не установленные факты.',
         'Суммарный оборот не равен ущербу или объёму уникальных денег.']
@@ -285,5 +287,7 @@ def analyze(data_dir: Path, output_dir: Path, label='Загруженный на
         elapsed_seconds=round(time.perf_counter() - started, 3), hashes=hashes,
         parameters={'louvain_seed': 42, 'betweenness_seed': 42, 'betweenness_samples': min(32, len(G)),
                     'weights': {'structure': .35, 'seed_branches': .30, 'observed_flow': .20, 'role_signals': .15}})
+    write_workbook(output_dir, summary)
+    summary['elapsed_seconds'] = round(time.perf_counter() - started, 3)
     (output_dir / 'manifest.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     return Result(summary, records, graph_edges, transactions, clusters, output_dir)

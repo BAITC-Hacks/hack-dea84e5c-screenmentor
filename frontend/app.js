@@ -128,7 +128,7 @@ $('upload-form').addEventListener('submit',async event=>{
   catch(error){$('upload-error').textContent=error.message;}
   finally{$('analyze-button').disabled=false;$('analyze-button').textContent='Рассчитать роли и приоритеты';}
 });
-$('export-button').addEventListener('click',()=>{if(!runId)return;$('export-links').innerHTML=[['nodes_roles.csv','Роли и приоритеты всех счетов'],['clusters.csv','Сообщества и гипотезы'],['top_nodes.csv','Очередь проверки'],['manifest.json','Параметры и хеши исходных файлов']].map(([name,label])=>`<a class="export-link" href="/api/runs/${runId}/exports/${name}" download><span><strong>${name}</strong><br><small>${label}</small></span><span>↓</span></a>`).join('');$('export-dialog').showModal();});
+$('export-button').addEventListener('click',()=>{if(!runId)return;$('export-links').innerHTML=[['results.xlsx','Для Excel: все результаты, кириллица и точные номера счетов'],['nodes_roles.csv','CSV: роли и приоритеты всех счетов'],['clusters.csv','CSV: сообщества и гипотезы'],['top_nodes.csv','CSV: очередь проверки'],['manifest.json','Параметры и хеши исходных файлов']].map(([name,label])=>`<a class="export-link" href="/api/runs/${runId}/exports/${name}" download><span><strong>${name==='results.xlsx'?'Скачать для Excel (.xlsx)':name}</strong><br><small>${label}</small></span><span>↓</span></a>`).join('');$('export-dialog').showModal();});
 $('quality-button').addEventListener('click',showQuality);$('method-button').addEventListener('click',showMethod);
 $('reset-button').addEventListener('click',()=>api('/api/initial').then(activate).catch(showError));
 $('fit-button').addEventListener('click',()=>cy&&cy.fit(undefined,40));

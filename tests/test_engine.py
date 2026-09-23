@@ -31,9 +31,9 @@ def test_exact_ids_isolates_boundary_and_exports(source, tmp_path):
     assert all(n['role'] != 'terminal' for n in boundary)
     assert all(len(n['evidence']) <= 200 for n in result.nodes)
     assert all(0 <= n['role_score'] <= 1 and 0 <= n['priority_score'] <= 1 for n in result.nodes)
-    with (tmp_path / 'out' / 'nodes_roles.csv').open(encoding='utf-8', newline='') as file:
+    with (tmp_path / 'out' / 'nodes_roles.csv').open(encoding='utf-8-sig', newline='') as file:
         assert {r['gid'] for r in csv.DictReader(file)} == expected
-    with (tmp_path / 'out' / 'top_nodes.csv').open(encoding='utf-8', newline='') as file:
+    with (tmp_path / 'out' / 'top_nodes.csv').open(encoding='utf-8-sig', newline='') as file:
         assert len(list(csv.DictReader(file))) >= 20
     assert sum(c['n_nodes'] for c in result.clusters) == len(expected)
 

@@ -150,7 +150,19 @@ $('upload-form').addEventListener('submit',async event=>{
   catch(error){$('upload-error').textContent=error.message;}
   finally{$('analyze-button').disabled=false;$('analyze-button').textContent='Проверить файлы и начать анализ';}
 });
-$('export-button').addEventListener('click',()=>{if(!runId)return;$('export-links').innerHTML=[['results.xlsx','Для Excel: все результаты, кириллица и точные номера счетов'],['nodes_roles.csv','CSV: роли и приоритеты всех счетов'],['clusters.csv','CSV: сообщества и гипотезы'],['top_nodes.csv','CSV: очередь проверки'],['manifest.json','Параметры и хеши исходных файлов']].map(([name,label])=>`<a class="export-link" href="/api/runs/${runId}/exports/${name}" download><span><strong>${name==='results.xlsx'?'Скачать для Excel (.xlsx)':name}</strong><br><small>${label}</small></span><span>↓</span></a>`).join('');$('export-dialog').showModal();});
+$('export-button').addEventListener('click',()=>{
+  if(!runId)return;
+  const link=document.createElement('a');
+  link.href=`/api/runs/${runId}/exports/results.xlsx`;
+  link.download='results.xlsx';
+  document.body.append(link);link.click();link.remove();
+});
+$('export-options-button').addEventListener('click',()=>{
+  if(!runId)return;
+  const exportLink=(name,label,primary=false)=>`<a class="export-link${primary?' excel-export':''}" href="/api/runs/${runId}/exports/${name}" download><span><strong>${primary?'Скачать оформленный Excel (.xlsx)':name}</strong><br><small>${label}</small></span><span>↓</span></a>`;
+  $('export-links').innerHTML=exportLink('results.xlsx','Все таблицы в одной книге · точные номера счетов · оформление ячеек',true)+`<details class="technical-exports"><summary>CSV и параметры для программной обработки</summary><p class="csv-format-note">CSV — текстовый формат: он не хранит границы, выравнивание и типы ячеек. При открытии двойным щелчком Excel может округлить длинные номера счетов. Для просмотра и редактирования в Excel используйте XLSX выше.</p>${[['nodes_roles.csv','Роли и приоритеты всех счетов'],['clusters.csv','Сообщества и гипотезы'],['top_nodes.csv','Очередь проверки'],['manifest.json','Параметры и хеши исходных файлов']].map(([name,label])=>exportLink(name,label)).join('')}</details>`;
+  $('export-dialog').showModal();
+});
 $('quality-button').addEventListener('click',showQuality);$('method-button').addEventListener('click',showMethod);
 $('reset-button').addEventListener('click',()=>api('/api/initial').then(activate).catch(showError));
 $('fit-button').addEventListener('click',()=>cy&&cy.fit(undefined,40));

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS = Path(os.environ.get('GRAPH_ARTIFACTS_DIR', str(ROOT / 'artifacts')))
 runs: dict[str, Result] = {}
 initial_id = None
+demo_id = None
 lock = threading.RLock()
 EXPORTS = {'results.xlsx', 'nodes_roles.csv', 'clusters.csv', 'top_nodes.csv', 'manifest.json'}
 
@@ -82,6 +83,23 @@ def get_run(run_id):
 @app.get('/api/initial')
 def initial():
     return {'run_id': initial_id, 'summary': get_run(initial_id).summary}
+
+
+@app.get('/api/demo')
+def demo():
+    """A separate synthetic run; never replace the analyst's initial dataset."""
+    global demo_id
+    with lock:
+        if get_run(initial_id).summary['synthetic']:
+            return initial()
+        if demo_id not in runs:
+            demo_id = new_run(create_demo(ARTIFACTS / 'guided-demo'), 'Синтетический пример', True)
+        return {'run_id': demo_id, 'summary': get_run(demo_id).summary}
+
+
+@app.get('/api/runs/{run_id}')
+def run_summary(run_id: str):
+    return {'run_id': run_id, 'summary': get_run(run_id).summary}
 
 
 @app.post('/api/analyze')

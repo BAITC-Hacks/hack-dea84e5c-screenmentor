@@ -55,6 +55,28 @@ def test_upload_valid_and_invalid_files(client, tmp_path):
     assert 'detail' in response.json()
 
 
+def test_restore_run_metadata_and_missing_run(client):
+    initial = client.get('/api/initial').json()
+    assert client.get('/api/runs/' + initial['run_id']).json() == initial
+    assert client.get('/api/runs/missing-run').status_code == 404
+
+
+def test_guided_demo_is_cached_and_does_not_replace_working_run(client, tmp_path, monkeypatch):
+    # Model a server started with a case, distinct from the synthetic training run.
+    original_id = api.new_run(create_demo(tmp_path / 'case-input'), 'Working case', False)
+    monkeypatch.setattr(api, 'initial_id', original_id)
+    original = client.get('/api/initial').json()
+    before = {name: client.get(f'/api/runs/{original_id}/exports/{name}').content
+              for name in ['nodes_roles.csv', 'clusters.csv', 'top_nodes.csv']}
+    demo = client.get('/api/demo').json()
+    assert demo['summary']['synthetic'] is True
+    assert demo['run_id'] != original_id
+    assert client.get('/api/demo').json() == demo
+    assert client.get('/api/initial').json() == original
+    for name, content in before.items():
+        assert client.get(f'/api/runs/{original_id}/exports/{name}').content == content
+
+
 def test_optional_authentication(client, monkeypatch):
     monkeypatch.setenv('GRAPH_ACCESS_PASSWORD', 'test-only-password')
     assert client.get('/api/initial').status_code == 401
